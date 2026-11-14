@@ -1,4 +1,4 @@
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { existsSync, mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
@@ -25,7 +25,8 @@ async function cloneRepository(repositoryUrl: string, targetDir: string): Promis
     }
 
     // Execute git clone command
-    execSync(`git clone --depth 1 "${repositoryUrl}" "${targetDir}"`, {
+    execFileSync('git', ['clone', '--depth', '1', '--', repositoryUrl, targetDir], {
+      shell: false,
       stdio: 'pipe',
       encoding: 'utf8',
     });
@@ -154,7 +155,8 @@ export async function setupAwsLogAnalyzer(
   // Install Python dependencies using uv
   console.log('📦 Installing Python dependencies with uv...');
   try {
-    execSync('uv sync', {
+    execFileSync('uv', ['sync'], {
+      shell: false,
       cwd: targetPath,
       stdio: 'inherit',
       encoding: 'utf8',

@@ -1,4 +1,4 @@
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
@@ -35,7 +35,7 @@ export async function installMcpServer(options: MCPInstallOptions): Promise<{
 
   // Check if Claude CLI is available
   try {
-    execSync('claude --version', { stdio: 'ignore' });
+    execFileSync('claude', ['--version'], { stdio: 'ignore', shell: false });
   } catch {
     return {
       success: false,
@@ -47,55 +47,64 @@ export async function installMcpServer(options: MCPInstallOptions): Promise<{
   // Build the Claude MCP add command
   // The server name should come from the addon ID or a specific field
   const serverName = addon.mcp?.serverName;
+  if (!serverName || !/^[a-zA-Z0-9_][a-zA-Z0-9_-]*$/.test(serverName)) {
+    return { success: false, message: 'Invalid MCP server name' };
+  }
   // Use --scope user for global (~/.claude) and --scope project for local (./.claude)
   const scope = installationType === 'local' ? 'project' : 'user';
-  let command = `claude mcp add ${serverName} --scope ${scope}`;
+  const commandArgs = ['mcp', 'add', serverName, '--scope', scope];
 
   // Add environment variables if specified
   if (addon.mcp?.env && Object.keys(addon.mcp.env).length > 0) {
     for (const [key, value] of Object.entries(addon.mcp.env)) {
-      command += ` --env ${key}=${value}`;
+      if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(key)) {
+        return { success: false, message: 'Invalid MCP environment variable name' };
+      }
+      commandArgs.push('--env', `${key}=${value}`);
     }
   }
 
   if (isCommandMcpServer(addon.mcp)) {
     const mcpMetadata = addon.mcp as McpCommandAddonMetadata;
     // Add the -- separator before the command
-    command += ' --';
+    commandArgs.push('--');
 
     // Add the MCP server command and args
     if (mcpMetadata.command) {
-      command += ` ${mcpMetadata.command}`;
+      commandArgs.push(mcpMetadata.command);
 
       // Add all args from the addon configuration
       if (mcpMetadata.args && mcpMetadata.args.length > 0) {
-        command += ` ${mcpMetadata.args.join(' ')}`;
+        commandArgs.push(...mcpMetadata.args);
       } else {
         // Fallback: if no args provided, use package name with @latest
-        command += ` ${addon.packageName}@latest`;
+        commandArgs.push(`${addon.packageName}@latest`);
       }
 
       // Add registry for private packages (if specified separately)
       if (addon.registry) {
-        command += ` ${addon.registry}`;
+        commandArgs.push(addon.registry);
       }
     }
   } else if (isRemoteHostedMcpServer(addon.mcp)) {
     const mcpMetadata = addon.mcp as McpRemoteHostedAddonMetadata;
-    command += ` --transport ${mcpMetadata.transport} ${mcpMetadata.url}`;
+    if (!['http', 'sse'].includes(mcpMetadata.transport) || !/^https?:\/\//i.test(mcpMetadata.url)) {
+      return { success: false, message: 'Invalid remote MCP transport or URL' };
+    }
+    commandArgs.push('--transport', mcpMetadata.transport, mcpMetadata.url);
   } else {
     throw new Error(`Unsupported MCP addon with configuration: ${addon.mcp}`);
   }
 
   // Append any additional server-specific arguments
   if (additionalArgs.length > 0) {
-    command += ` ${additionalArgs.join(' ')}`;
+    commandArgs.push(...additionalArgs);
   }
 
   // Log command in dry-run mode
   if (dryRun) {
-    console.log('\n📋 Would execute:');
-    console.log(command);
+    // Arguments may contain credentials; do not print the command line.
+    console.log(`\n📋 Would register MCP server ${serverName} in ${scope} scope.`);
     return {
       success: true,
       message: 'Dry-run completed',
@@ -112,7 +121,8 @@ export async function installMcpServer(options: MCPInstallOptions): Promise<{
     try {
       console.log(`\n🔧 Installing MCP server (attempt ${attempts}/${maxAttempts})...`);
 
-      const output = execSync(command, {
+      const output = execFileSync('claude', commandArgs, {
+        shell: false,
         encoding: 'utf-8',
         stdio: 'pipe',
       });
@@ -126,7 +136,7 @@ export async function installMcpServer(options: MCPInstallOptions): Promise<{
       }
 
       // If we get here, something might be wrong but no error was thrown
-      console.log('Output:', output);
+      console.log('Claude CLI did not confirm installation.');
     } catch (error: any) {
       lastError = error;
 
@@ -165,7 +175,8 @@ export async function installMcpServer(options: MCPInstallOptions): Promise<{
   return {
     success: false,
     message: 'Failed to install MCP server',
-    error: lastError?.message || 'Unknown error occurred',
+    // Child-process errors include the command and may contain credentials.
+    error: lastError ? 'Claude CLI installation failed; command output withheld' : 'Unknown error occurred',
   };
 }
 
@@ -277,7 +288,11 @@ export async function removeMcpServer(serverName: string): Promise<{
 }> {
   try {
     // Use Claude CLI to remove the server
-    const output = execSync(`claude mcp remove ${serverName}`, {
+    if (!/^[a-zA-Z0-9_][a-zA-Z0-9_-]*$/.test(serverName)) {
+      return { success: false, message: 'Invalid MCP server name' };
+    }
+    const output = execFileSync('claude', ['mcp', 'remove', serverName], {
+      shell: false,
       encoding: 'utf-8',
       stdio: 'pipe',
     });

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -26,9 +26,10 @@ export async function handleNxExecution(generatorName: string, args: string[]) {
   } else {
     // Execute through nx command (when in ai-toolkit workspace)
     try {
-      const nxArgs = ['nx', 'generate', `@uniswap/ai-toolkit-nx-claude:${generatorName}`, ...args];
+      const nxArgs = ['generate', `@uniswap/ai-toolkit-nx-claude:${generatorName}`, ...args];
 
-      execSync(nxArgs.join(' '), {
+      execFileSync('nx', nxArgs, {
+        shell: false,
         stdio: 'inherit',
         cwd: process.cwd(),
       });

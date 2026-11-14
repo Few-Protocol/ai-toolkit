@@ -268,10 +268,13 @@ export async function validateAddonRequirements(
 
   // Check required commands
   if (addon.requirements?.commands) {
-    const { execSync } = require('child_process');
+    const { execFileSync } = require('child_process');
     for (const cmd of addon.requirements.commands) {
       try {
-        execSync(`which ${cmd}`, { stdio: 'ignore' });
+        if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(cmd)) {
+          throw new Error('Invalid command name');
+        }
+        execFileSync('which', [cmd], { stdio: 'ignore', shell: false });
       } catch {
         errors.push(`Required command '${cmd}' not found`);
       }
